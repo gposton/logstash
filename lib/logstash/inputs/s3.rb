@@ -1,6 +1,7 @@
 # encoding: utf-8
 require "logstash/inputs/base"
 require "logstash/namespace"
+require "logstash/plugin_mixins/aws_config"
 
 require "time"
 require "tmpdir"
@@ -10,6 +11,8 @@ require "tmpdir"
 # Each line from each file generates an event.
 # Files ending in '.gz' are handled as gzip'ed files.
 class LogStash::Inputs::S3 < LogStash::Inputs::Base
+  include LogStash::PluginMixins::AwsConfig
+
   config_name "s3"
   milestone 1
 
@@ -17,26 +20,8 @@ class LogStash::Inputs::S3 < LogStash::Inputs::Base
   # support and readline usage). Support gzip through a gzip codec! ;)
   default :codec, "plain"
 
-  # The credentials of the AWS account used to access the bucket.
-  # Credentials can be specified:
-  # - As an ["id","secret"] array
-  # - As a path to a file containing AWS_ACCESS_KEY_ID=... and AWS_SECRET_ACCESS_KEY=...
-  # - In the environment (variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY)
-  config :credentials, :validate => :array, :default => nil
-
   # The name of the S3 bucket.
   config :bucket, :validate => :string, :required => true
-
-  # The AWS region for your bucket.
-  config :region, :validate => ["us-east-1", "us-west-1", "us-west-2",
-                                "eu-west-1", "ap-southeast-1", "ap-southeast-2",
-                                "ap-northeast-1", "sa-east-1", "us-gov-west-1"],
-                                :deprecated => "'region' has been deprecated in favor of 'region_endpoint'"
-
-  # The AWS region for your bucket.
-  config :region_endpoint, :validate => ["us-east-1", "us-west-1", "us-west-2",
-                                "eu-west-1", "ap-southeast-1", "ap-southeast-2",
-                                "ap-northeast-1", "sa-east-1", "us-gov-west-1"], :default => "us-east-1"
 
   # If specified, the prefix the filenames in the bucket must match (not a regexp)
   config :prefix, :validate => :string, :default => nil
@@ -110,11 +95,7 @@ class LogStash::Inputs::S3 < LogStash::Inputs::Base
       @sincedb_path = File.join(ENV["HOME"], ".sincedb_" + Digest::MD5.hexdigest("#{@bucket}+#{@prefix}"))
     end
 
-    s3 = AWS::S3.new(
-      :access_key_id => @access_key_id,
-      :secret_access_key => @secret_access_key,
-      :region => @region_endpoint
-    )
+    s3 = AWS::S3.new(aws_options_hash)
 
     @s3bucket = s3.buckets[@bucket]
 
@@ -170,8 +151,8 @@ class LogStash::Inputs::S3 < LogStash::Inputs::Base
         objects[log.key] = log.last_modified
       end
     end
-
-    return sorted_objects = objects.keys.sort {|a,b| objects[a] <=> objects[b]}
+    sorted_objects = objects.keys.sort {|a,b| objects[a] <=> objects[b]}
+    return sorted_objects
 
   end # def list_new
 
