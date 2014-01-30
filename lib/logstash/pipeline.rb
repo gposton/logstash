@@ -52,6 +52,13 @@ class LogStash::Pipeline
   end
 
   def configure(setting, value)
+    if setting == "filter-workers"
+      # Abort if we have any filters that aren't threadsafe
+      if value > 1 && @filters.any? { |f| !f.threadsafe? }
+        plugins = @filters.select { |f| !f.threadsafe? }.collect { |f| f.class.config_name }
+        raise LogStash::ConfigurationError, "Cannot use more than 1 filter worker because the following plugins don't work with more than one worker: #{plugins.join(", ")}"
+      end
+    end
     @settings[setting] = value
   end
 
@@ -187,14 +194,19 @@ class LogStash::Pipeline
           break
         end
 
-
         # TODO(sissel): we can avoid the extra array creation here
         # if we don't guarantee ordering of origin vs created events.
         # - origin event is one that comes in naturally to the filter worker.
         # - created events are emitted by filters like split or metrics
         events = [event]
-        filter(event) do |newevent|
-          events << newevent
+        done = false
+        while (!done)
+          filter(event) do |newevent|
+            events << newevent
+          end
+          remainder = events.select { |ev| ev.refilter? && !ev.cancelled? }
+          done = remainder.empty?
+          event = remainder.first unless done
         end
         events.each do |event|
           next if event.cancelled?
@@ -252,6 +264,7 @@ class LogStash::Pipeline
   end
 
   def filter(event, &block)
+    event.set_refilter(false)
     @filter_func.call(event, &block)
   end
 

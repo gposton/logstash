@@ -59,6 +59,7 @@ class LogStash::Filters::Split < LogStash::Filters::Base
         event_split[@field] = value
       else
         event_split = LogStash::Event.new(value)
+        event_split.set_refilter(@refilter)
       end
       filter_matched(event_split)
 
