@@ -1,8 +1,8 @@
-# encoding: utf-8
 require "logstash/inputs/base"
 require "logstash/namespace"
 require "logstash/plugin_mixins/aws_config"
 
+require "aws-sdk"
 require "time"
 require "tmpdir"
 
@@ -47,42 +47,8 @@ class LogStash::Inputs::S3 < LogStash::Inputs::Base
   public
   def register
     require "digest/md5"
-    require "aws-sdk"
 
-    @region_endpoint = @region if @region && !@region.empty?
-
-    @logger.info("Registering s3 input", :bucket => @bucket, :region_endpoint => @region_endpoint)
-
-    if @credentials.nil?
-      @access_key_id = ENV['AWS_ACCESS_KEY_ID']
-      @secret_access_key = ENV['AWS_SECRET_ACCESS_KEY']
-    elsif @credentials.is_a? Array
-      if @credentials.length ==1
-        File.open(@credentials[0]) { |f| f.each do |line|
-          unless (/^\#/.match(line))
-            if(/\s*=\s*/.match(line))
-              param, value = line.split('=', 2)
-              param = param.chomp().strip()
-              value = value.chomp().strip()
-              if param.eql?('AWS_ACCESS_KEY_ID')
-                @access_key_id = value
-              elsif param.eql?('AWS_SECRET_ACCESS_KEY')
-                @secret_access_key = value
-              end
-            end
-          end
-        end
-        }
-      elsif @credentials.length == 2
-        @access_key_id = @credentials[0]
-        @secret_access_key = @credentials[1]
-      else
-        raise ArgumentError.new('Credentials must be of the form "/path/to/file" or ["id", "secret"]')
-      end
-    end
-    if @access_key_id.nil? or @secret_access_key.nil?
-      raise ArgumentError.new('Missing AWS credentials')
-    end
+    @logger.info("Registering s3 input", :bucket => @bucket, :region => @region)
 
     if @bucket.nil?
       raise ArgumentError.new('Missing AWS bucket')
@@ -151,8 +117,8 @@ class LogStash::Inputs::S3 < LogStash::Inputs::Base
         objects[log.key] = log.last_modified
       end
     end
-    sorted_objects = objects.keys.sort {|a,b| objects[a] <=> objects[b]}
-    return sorted_objects
+
+    return sorted_objects = objects.keys.sort {|a,b| objects[a] <=> objects[b]}
 
   end # def list_new
 
